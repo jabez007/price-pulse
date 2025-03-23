@@ -1,11 +1,13 @@
 import json
 import os
+import random
 import re
 import sys
+import time
 from datetime import datetime
 
-import requests
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 
 def load_websites_config():
@@ -52,18 +54,44 @@ def load_websites_config():
 
 def scrape_price(website):
     """Scrape the price from a website."""
+    debug_dir = "debug"
+    os.makedirs(debug_dir, exist_ok=True)
     try:
-        headers = website.get(
-            "headers",
-            {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            },
-        )
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=False)
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                java_script_enabled=True,
+                has_touch=False,
+                locale="en-US",
+                timezone_id="America/Chicago",
+            )
+            page = context.new_page()
+            page.set_extra_http_headers(
+                {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9",
+                }
+            )
+            page.goto(website["url"], wait_until="domcontentloaded", timeout=60000)
+            time.sleep(random.uniform(5, 10))
+            page.evaluate("document.body")
+            time.sleep(random.uniform(5, 10))
+            content = page.content()
+            browser.close()
 
-        response = requests.get(website["url"], headers=headers, timeout=10)
-        response.raise_for_status()
+        # Debug information - uncomment to diagnose issues
+        # print(f"Response headers: {response.headers}")
+        # print(f"Response encoding: {response.encoding}")
+        # print(f"Content type: {response.headers.get('Content-Type')}")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        # Debug: Save the HTML to a file for inspection
+        debug_filename = f"{debug_dir}/{website['name'].replace(' ', '_').lower()}.html"
+        with open(debug_filename, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Saved HTML to {debug_filename} for inspection")
+
+        soup = BeautifulSoup(content, "html.parser")
         price_element = soup.select_one(website["selector"])
 
         if not price_element:

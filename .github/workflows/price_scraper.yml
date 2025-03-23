@@ -20,11 +20,14 @@ jobs:
       
       - name: Install dependencies
         run: |
+          apt-get update
+          apt-get install -y xvfb
           python -m pip install --upgrade pip
           pip install -r scraper/requirements.txt
+          playwright install chromium
       
       - name: Run price scraper
-        run: python scraper/main.py
+        run: xvfb-run python scraper/main.py
       
       - name: Configure Git
         run: |
