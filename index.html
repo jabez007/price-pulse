@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Price Tracker</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+    <style>
+        .chart-container {
+            position: relative;
+            height: 60vh;
+            width: 100%;
+        }
+        .card {
+            margin-bottom: 20px;
+        }
+        .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <span class="navbar-brand mb-0 h1">Product Price Tracker</span>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Price Comparison Chart</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="priceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Price Statistics</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="statsContainer"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Raw Price Data</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table class="table table-striped" id="priceTable">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Website</th>
+                                        <th>Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Function to get random colors for chart
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        // Load the data and create the chart
+        async function loadData() {
+            try {
+                const response = await fetch('data/combined.json');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch data');
+                }
+                const data = await response.json();
+                createChart(data);
+                populateTable(data);
+                calculateStats(data);
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('priceChart').innerHTML = '<div class="alert alert-danger">Error loading data. Make sure the scraper has run at least once.</div>';
+            }
+        }
+
+        // Create the price chart
+        function createChart(data) {
+            const dates = Object.keys(data).sort();
+            const websites = new Set();
+            
+            // Get all website names
+            dates.forEach(date => {
+                Object.keys(data[date]).forEach(website => {
+                    websites.add(website);
+                });
+            });
+            
+            // Prepare datasets for each website
+            const datasets = Array.from(websites).map(website => {
+                const color = getRandomColor();
+                return {
+                    label: website,
+                    data: dates.map(date => data[date][website] || null),
+                    borderColor: color,
+                    backgroundColor: color + '33',
+                    tension: 0.1,
+                    pointRadius: 4
+                };
+            });
+            
+            // Create chart
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Price ($)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': $' + context.raw.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Populate the data table
+        function populateTable(data) {
+            const tableBody = document.querySelector('#priceTable tbody');
+            tableBody.innerHTML = '';
+            
+            // Sort dates in descending order (newest first)
+            const dates = Object.keys(data).sort().reverse();
+            
+            dates.forEach(date => {
+                const websites = Object.keys(data[date]);
+                websites.forEach(website => {
+                    const price = data[date][website];
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${date}</td>
+                        <td>${website}</td>
+                        <td>$${price.toFixed(2)}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            });
+        }
+
+        // Calculate and display statistics
+        function calculateStats(data) {
+            const statsContainer = document.getElementById('statsContainer');
+            const dates = Object.keys(data).sort();
+            const websites = new Set();
+            
+            // Get all website names
+            dates.forEach(date => {
+                Object.keys(data[date]).forEach(website => {
+                    websites.add(website);
+                });
+            });
+            
+            // Calculate statistics for each website
+            let statsHTML = '';
+            Array.from(websites).forEach(website => {
+                const prices = [];
+                dates.forEach(date => {
+                    if (data[date][website] !== undefined) {
+                        prices.push(data[date][website]);
+                    }
+                });
+                
+                if (prices.length > 0) {
+                    const currentPrice = prices[prices.length - 1];
+                    const lowestPrice = Math.min(...prices);
+                    const highestPrice = Math.max(...prices);
+                    const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
+                    
+                    // Calculate price change (current vs first)
+                    const firstPrice = prices[0];
+                    const priceChange = currentPrice - firstPrice;
+                    const priceChangePercentage = (priceChange / firstPrice) * 100;
+                    
+                    statsHTML += `
+                        <div class="mb-4">
+                            <h6>${website}</h6>
+                            <div class="row">
+                                <div class="col-6">Current Price:</div>
+                                <div class="col-6">$${currentPrice.toFixed(2)}</div>
+                            </div>
+                            <div class="row">
+                                <div class="col-6">Lowest Price:</div>
+                                <div class="col-6">$${lowestPrice.toFixed(2)}</div>
+                            </div>
+                            <div class="row">
+                                <div class="col-6">Highest Price:</div>
+                                <div class="col-6">$${highestPrice.toFixed(2)}</div>
+                            </div>
+                            <div class="row">
+                                <div class="col-6">Average Price:</div>
+                                <div class="col-6">$${averagePrice.toFixed(2)}</div>
+                            </div>
+                            <div class="row">
+                                <div class="col-6">Price Change:</div>
+                                <div class="col-6 ${priceChange < 0 ? 'text-success' : priceChange > 0 ? 'text-danger' : ''}">
+                                    ${priceChange < 0 ? '↓' : priceChange > 0 ? '↑' : ''} 
+                                    $${Math.abs(priceChange).toFixed(2)} 
+                                    (${priceChangePercentage.toFixed(2)}%)
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+            
+            statsContainer.innerHTML = statsHTML;
+        }
+
+        // Load data when the page loads
+        window.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>
